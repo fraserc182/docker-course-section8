@@ -1,0 +1,50 @@
+name: Deploy multi container package
+
+on:
+  workflow_dispatch:
+    
+  push:
+    branches:
+      - main
+ 
+jobs:
+  build:
+    name: docker test, build & push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      - run: docker build -t fraserc182/react-test -f ./client/Dockerfile.dev ./client
+      - run: docker run -e CI=true fraserc182/react-test npm test
+
+
+      - name: build prod images
+        run: |
+          docker build -t fraserc182/multi-client ./client
+          docker build -t fraserc182/multi-nginx ./nginx
+          docker build -t fraserc182/multi-server ./server
+          docker build -t fraserc182/multi-worker ./worker
+
+      - name: push prod images
+        run: |
+          docker push fraserc182/multi-client
+          docker push fraserc182/multi-nginx
+          docker push fraserc182/multi-server
+          docker push fraserc182/multi-worker
+
+
+      - name: Generate deployment package
+        run: zip -r deploy.zip . -x '*.git*'
+ 
+      - name: Deploy to EB
+        uses: einaregilsson/beanstalk-deploy@v18
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_KEY }}
+          application_name: react-env
+          environment_name: Reactenv-env
+          existing_bucket_name: elasticbeanstalk-eu-west-1-783464759509
+          region: eu-west-1
+          version_label: ${{ github.sha }}
+          deployment_package: deploy.zip
+ 
